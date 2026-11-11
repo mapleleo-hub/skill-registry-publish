@@ -32,6 +32,7 @@ else if (!names.length) {
 
 
 import { execFileSync } from 'node:child_process';
+import { t } from './lib-i18n.mjs';
 
 const C = {
   ok: (s) => `\x1b[32m✓\x1b[0m ${s}`,
@@ -130,14 +131,14 @@ async function checkGithub(name) {
 }
 
 function verdict(ss, ch, gh) {
-  if (ss.error || ch.error || gh.error) return { level: 'warn', text: '部分查询失败，重跑一次' };
+  if (ss.error || ch.error || gh.error) return { level: 'warn', text: t('部分查询失败，重跑一次', 'some queries failed, rerun') };
   // 只有 skill 生态里的同名才算硬撞车。GitHub 上不同领域的同名仓库很多，不构成冲突
-  if (ch.exact.length) return { level: 'bad', text: `clawhub 已被占用：${ch.exact.map((x) => x.install && x.install.reference).join(', ')}` };
-  if (ss.exact.length) return { level: 'bad', text: `skills.sh 有同名 skill：${ss.exact.map((x) => x.id).slice(0, 3).join(', ')}` };
+  if (ch.exact.length) return { level: 'bad', text: t(`clawhub 已被占用：${ch.exact.map((x) => x.install && x.install.reference).join(', ')}`, `taken on clawhub: ${ch.exact.map((x) => x.install && x.install.reference).join(', ')}`) };
+  if (ss.exact.length) return { level: 'bad', text: t(`skills.sh 有同名 skill：${ss.exact.map((x) => x.id).slice(0, 3).join(', ')}`, `same-name skill on skills.sh: ${ss.exact.map((x) => x.id).slice(0, 3).join(', ')}`) };
   // 没有同名时看密度：同词越多，用户搜的时候越难点到你
-  if (ss.count > 50 || gh.total > 200) return { level: 'warn', text: `太泛（skills.sh ${ss.count} 条，GitHub ${gh.total} 个）` };
-  if (ss.count > 10 || gh.total > 50) return { level: 'warn', text: `略拥挤（skills.sh ${ss.count} 条，GitHub ${gh.total} 个）` };
-  return { level: 'ok', text: '干净' };
+  if (ss.count > 50 || gh.total > 200) return { level: 'warn', text: t(`太泛（skills.sh ${ss.count} 条，GitHub ${gh.total} 个）`, `too generic (${ss.count} hits on skills.sh, ${gh.total} repos on GitHub)`) };
+  if (ss.count > 10 || gh.total > 50) return { level: 'warn', text: t(`略拥挤（skills.sh ${ss.count} 条，GitHub ${gh.total} 个）`, `crowded (${ss.count} hits on skills.sh, ${gh.total} repos on GitHub)`) };
+  return { level: 'ok', text: t('干净', 'clean') };
 }
 
 const results = [];
@@ -149,26 +150,26 @@ for (const name of names) {
 
   if (ss.error) console.log(C.bad(`skills.sh 查询失败：${ss.error}`));
   else {
-    const tag = ss.exact.length ? C.bad('有同名') : ss.count > 50 ? C.warn('太泛') : C.ok('无同名');
-    console.log(`skills.sh  ${String(ss.count).padStart(4)} 条  ${tag}`);
+    const tag = ss.exact.length ? C.bad(t('有同名', 'collision')) : ss.count > 50 ? C.warn(t('太泛', 'too generic')) : C.ok(t('无同名', 'no collision'));
+    console.log(`skills.sh  ${String(ss.count).padStart(4)} ${t('条', 'hits')}  ${tag}`);
     if (ss.sample.length) console.log(C.dim('            ' + ss.sample.join(', ')));
   }
 
   if (ch.error) console.log(C.bad(`clawhub 查询失败：${ch.error}`));
   else {
-    const ownNote = ch.own && ch.own.length ? C.dim('（自己已发布，不算占用）') : '';
-    console.log(`clawhub    ${ch.exact.length ? C.bad('已占用') : C.ok('未占用')} ${ownNote}`);
+    const ownNote = ch.own && ch.own.length ? C.dim(t('（自己已发布，不算占用）', ' (yours, not a conflict)')) : '';
+    console.log(`clawhub    ${ch.exact.length ? C.bad(t('已占用', 'taken')) : C.ok(t('未占用', 'free'))} ${ownNote}`);
   }
 
   if (gh.error) console.log(C.bad(`GitHub 查询失败：${gh.error}`));
   else {
-    console.log(`GitHub     ${String(gh.total).padStart(4)} 个同名仓库  ${gh.exact.length ? C.warn('存在同名') : C.ok('无同名')}`);
+    console.log(`GitHub     ${String(gh.total).padStart(4)} ${t('个同名仓库', 'repos')}  ${gh.exact.length ? C.warn(t('存在同名', 'same-name repos exist')) : C.ok(t('无同名', 'no collision'))}`);
     if (gh.exact.length) console.log(C.dim('            ' + gh.exact.join(', ')));
   }
 
   const v = verdict(ss, ch, gh);
   const mark = v.level === 'ok' ? C.ok(v.text) : v.level === 'warn' ? C.warn(v.text) : C.bad(v.text);
-  console.log(`判定：${mark}`);
+  console.log(`${t('判定：', 'Verdict: ')}${mark}`);
   results.push({
     name,
     level: v.level,
@@ -183,12 +184,12 @@ if (results.length > 1) {
   const sorted = [...results].sort((a, b) => a.score - b.score || a.hits - b.hits);
   console.log('\n=== 排序 ===');
   for (const r of sorted) {
-    const mark = r.score === 0 ? C.ok('干净') : r.score === 1 ? C.warn('拥挤') : C.bad('撞名');
-    console.log(`  ${mark.padEnd(14)} ${r.name.padEnd(26)} skills.sh ${String(r.hits).padStart(4)} 条  GitHub ${String(r.gh).padStart(4)} 个`);
+    const mark = r.score === 0 ? C.ok(t('干净', 'clean')) : r.score === 1 ? C.warn(t('拥挤', 'crowded')) : C.bad(t('撞名', 'taken'));
+    console.log(`  ${mark.padEnd(14)} ${r.name.padEnd(26)} skills.sh ${String(r.hits).padStart(4)} ${t('条', 'hits')}  GitHub ${String(r.gh).padStart(4)}`);
   }
   const clean = sorted.filter((r) => r.score === 0);
-  if (clean.length) console.log('\n建议：' + clean.slice(0, 2).map((r) => r.name).join(' 或 '));
-  else console.log('\n没有干净候选，换一组词再试，或者接受最靠前的那个。');
-  console.log(C.dim('高频词（export、publish、registry）能带来检索命中，但同词太多反而沉底。'));
+  if (clean.length) console.log('\n' + t('建议：', 'Pick: ') + clean.slice(0, 2).map((r) => r.name).join(t(' 或 ', ' or ')));
+  else console.log(t('\n没有干净候选，换一组词再试，或者接受最靠前的那个。', '\nNo clean candidate. Try another word set, or take the top one.'));
+  console.log(C.dim(t('高频词（export、publish、registry）能带来检索命中，但同词太多反而沉底。', 'High-frequency words (export, publish, registry) aid retrieval until the term gets crowded.')));
 }
 console.log('');

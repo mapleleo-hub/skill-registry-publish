@@ -6,6 +6,7 @@
 // 不预设任何维度。不同赛道的能力完全不同，预设一套维度只能分析一个赛道。
 // 做法是把每个 SKILL.md 的二级三级标题抽出来归一化，统计哪些在多数同类里重复出现、
 // 哪些只有一两个有。重复出现的是这个赛道的标配，少数的位置是差异化空间。
+import { t } from './lib-i18n.mjs';
 
 const argv = process.argv.slice(2);
 let keyword = '';
@@ -18,7 +19,7 @@ for (let i = 0; i < argv.length; i++) {
 }
 
 if (!keyword) {
-  console.error('用法：node analyze.mjs "<关键词>" [--top 6] [--json]');
+  console.error(t('用法：node analyze.mjs "<关键词>" [--top 6] [--json]', 'Usage: node analyze.mjs "<keyword>" [--top 6] [--json]'));
   process.exit(2);
 }
 
@@ -120,7 +121,7 @@ const picked = (strict.length ? strict : [...pool.values()])
   .sort((a, b) => (b.installs || 0) - (a.installs || 0))
   .slice(0, top);
 
-console.log(`\n${C.bold('关键词')} ${keyword}   分析 ${picked.length} 个同类`);
+console.log(`\n${C.bold(t('关键词', 'Keyword'))} ${keyword}   ${t('分析', 'analyzing')} ${picked.length} ${t('个同类', 'peers')}`);
 
 const docs = [];
 for (const s of picked) {
@@ -133,9 +134,9 @@ for (const s of picked) {
   });
 }
 
-console.log('\n' + C.bold('=== 同类（按安装量） ==='));
+console.log('\n' + C.bold('=== ' + t('同类（按安装量）', 'Peers (by installs)') + ' ==='));
 for (const d of docs) {
-  console.log(`  ${String(d.installs).padStart(7)}  ${d.id}${d.md ? '' : C.dim('  (正文取不到)')}`);
+  console.log(`  ${String(d.installs).padStart(7)}  ${d.id}${d.md ? '' : C.dim(t('  (正文取不到)', '  (body unavailable)'))}`);
 }
 
 // 按聚类键归并，记录每组的覆盖面
@@ -160,13 +161,13 @@ const rows = [...groups.values()]
 const structural = rows.filter((r) => STRUCTURAL.test(r.label));
 const capability = rows.filter((r) => !STRUCTURAL.test(r.label));
 
-console.log('\n' + C.bold('=== 能力分布（从章节标题提炼） ==='));
+console.log('\n' + C.bold('=== ' + t('能力分布（从章节标题提炼）', 'Capability distribution (from section headings)') + ' ==='));
 for (const r of capability.slice(0, 20)) {
   const tag =
     r.count >= total * 0.6
       ? C.ok(String(r.count) + '/' + total)
       : r.count === 1
-        ? C.warn('独有')
+        ? C.warn(t('独有', 'unique'))
         : String(r.count) + '/' + total;
   const variants = r.variants.length > 1 ? C.dim(' (' + r.variants.slice(0, 3).join(' / ') + ')') : '';
   const who = r.count === 1 ? C.dim(' ← ' + r.who[0]) : '';
@@ -174,24 +175,24 @@ for (const r of capability.slice(0, 20)) {
 }
 
 if (structural.length) {
-  console.log('\n' + C.dim('  文档结构型（不计入能力）：' + structural.map((r) => r.label).slice(0, 8).join('、')));
+  console.log('\n' + C.dim(t('  文档结构型（不计入能力）：', '  Structural headings (not capabilities): ') + structural.map((r) => r.label).slice(0, 8).join(t('、', ', '))));
 }
 
 // 差异化空间 = 只被少数同类覆盖的章节
 const rare = capability.filter((r) => r.count <= Math.max(1, Math.floor(total * 0.34)));
-console.log('\n' + C.bold('=== 差异化空间 ==='));
+console.log('\n' + C.bold('=== ' + t('差异化空间', 'Differentiation space') + ' ==='));
 if (rare.length) {
   for (const r of rare) {
     console.log(`  ${r.label.slice(0, 38).padEnd(40)} ${C.dim('← ' + r.who.map((w) => w.split('/')[0]).join(', '))}`);
   }
-  console.log(C.dim('\n  这些章节只有少数同类有。可能是差异化点，也可能是那个 skill 的特有场景，需要看正文确认。'));
+  console.log(C.dim(t('\n  这些章节只有少数同类有。可能是差异化点，也可能是那个 skill 的特有场景，需要看正文确认。', '\n  Only a few peers cover these. Could be a gap, or just that peer\'s special case. Check the source.')));
 } else {
-  console.log(C.dim('  没有明显差异，所有章节都在多数同类里出现。这个赛道已经做满了。'));
+  console.log(C.dim(t('  没有明显差异，所有章节都在多数同类里出现。这个赛道已经做满了。', '  No clear gap; most peers share every section. This space is saturated.')));
 }
 
 const withMd = docs.filter((d) => d.md).length;
 console.log(C.dim(`\n判定依据：${withMd}/${docs.length} 个 SKILL.md 可读，标题归一化后按前两词/前两字聚类。`));
-console.log(C.dim('局限：聚类是字符串级的，「发布流程」和「发布步骤」可能归到一起也可能没归上；'));
+console.log(C.dim(t('局限：聚类是字符串级的，「发布流程」和「发布步骤」可能归到一起也可能没归上；', 'Limits: grouping is string-level; similar headings may or may not merge;')));
 console.log(C.dim('作者不写小标题的 skill 提取不到内容。结论要回原文核对。\n'));
 
 if (json) {
