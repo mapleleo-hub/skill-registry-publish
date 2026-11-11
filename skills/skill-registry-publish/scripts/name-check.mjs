@@ -1,22 +1,37 @@
 #!/usr/bin/env node
-// 名字可用性检查：在 skills.sh、clawhub、GitHub 三个地方看候选名被占用到什么程度。
+// 名字可用性与候选生成。
 //
-//   node name-check.mjs <name> [更多候选...]
+//   node name-check.mjs <name> [更多候选...] [--owner <账号>]
+//   node name-check.mjs --suggest "export chat history" [--owner <账号>]
 //
-// 判定分三档：干净 / 可用但拥挤 / 撞名。撞名或太泛就该换，否则发出去会被淹没。
+// 检查模式：在 skills.sh、clawhub、GitHub 三处看候选名占用，判定 干净 / 拥挤 / 撞名。
+// 建议模式：给一句描述，生成候选名并逐个检查，按可用度排序。
+//
+// 判定依据是撞名与命中密度。名字太泛会沉底，因为 clawhub 的搜索只匹配 displayName，
+// skills.sh 的模糊搜索里同词越多，单个 skill 越难被点到。
 
 const argv = process.argv.slice(2);
 let selfOwner = '';
+let suggestFrom = '';
 const names = [];
 for (let i = 0; i < argv.length; i++) {
   if (argv[i] === '--owner') selfOwner = argv[++i] || '';
+  else if (argv[i] === '--suggest') suggestFrom = argv[++i] || '';
   else names.push(argv[i]);
 }
 
-if (!names.length) {
-  console.error('用法：node name-check.mjs <name> [更多候选...] [--owner <自己的账号>]');
+if (suggestFrom) names.push(...candidatesFrom(suggestFrom));
+else if (!names.length) {
+  console.error(
+    '用法：\n' +
+      '  node name-check.mjs <name> [更多候选...] [--owner <账号>]\n' +
+      '  node name-check.mjs --suggest "<功能描述>" [--owner <账号>]'
+  );
   process.exit(2);
 }
+
+
+import { execFileSync } from 'node:child_process';
 
 const C = {
   ok: (s) => `\x1b[32m✓\x1b[0m ${s}`,
@@ -24,6 +39,33 @@ const C = {
   bad: (s) => `\x1b[31m✗\x1b[0m ${s}`,
   dim: (s) => `\x1b[2m${s}\x1b[0m`,
 };
+
+// 从描述里出候选名。三种形态：动词+宾语、宾语+动词、加限定词。
+function candidatesFrom(text) {
+  // 描述里的每个名词都当一次核心词，因为哪个是主语需要语义判断，脚本猜不准。
+  // 只生成说得通的组合：核心词+动作、动作+核心词、修饰+核心词。
+  const VERBS = ['export', 'backup', 'archive', 'publish', 'sync', 'search', 'reader', 'writer'];
+  const words = String(text)
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, ' ')
+    .split(/[\s-]+/)
+    .filter((w) => w && w.length > 2 && !VERBS.includes(w) && !['the', 'and', 'for', 'from', 'with', 'into', 'all'].includes(w));
+  const uniq = [...new Set(words)];
+  if (!uniq.length) return [];
+
+  const out = new Set();
+  for (const core of uniq) {
+    for (const v of VERBS) {
+      out.add(core + '-' + v);
+      out.add(v + '-' + core);
+    }
+    // 相邻修饰词 + 核心
+    const idx = uniq.indexOf(core);
+    if (idx > 0) out.add(uniq[idx - 1] + '-' + core);
+    if (idx < uniq.length - 1) out.add(core + '-' + uniq[idx + 1]);
+  }
+  return [...out].filter((n) => n.length <= 32).slice(0, 12);
+}
 
 async function getJson(url) {
   const r = await fetch(url, { headers: { 'User-Agent': 'skill-registry-publish' } });
@@ -57,14 +99,31 @@ async function checkClawhub(name) {
   }
 }
 
-// GitHub：同名仓库多说明这个名字在别的语境里已被占用，用户搜到会很困惑
+// GitHub：同名仓库多说明这个名字在别的语境里已被占用。
+// 未认证的公开 API 限流是 10 次/分钟，批量查候选会撞上限，所以优先用 gh（带 token）。
 async function checkGithub(name) {
+  const q = `${encodeURIComponent('"' + name + '"')}+in:name&per_page=30`;
   try {
-    const j = await getJson(
-      `https://api.github.com/search/repositories?q=${encodeURIComponent('"' + name + '"')}+in:name&per_page=5`
-    );
+    const out = execFileSync('gh', ['api', `search/repositories?q=${q}`], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 15000,
+    });
+    const j = JSON.parse(out);
     const exact = (j.items || []).filter((r) => r.name === name && !(selfOwner && r.owner.login === selfOwner));
     return { total: j.total_count || 0, exact: exact.map((r) => r.full_name) };
+  } catch {
+    // gh 不可用或未登录，退回公开接口
+  }
+  try {
+    const r = await fetch(`https://api.github.com/search/repositories?q=${q}`, {
+      headers: { 'User-Agent': 'skill-registry-publish' },
+    });
+    if (r.status === 403) return { error: '限流（未认证 10 次/分钟），用 gh 登录或稍后重试' };
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const j = await r.json();
+    const exact = (j.items || []).filter((x) => x.name === name && !(selfOwner && x.owner.login === selfOwner));
+    return { total: j.total_count || 0, exact: exact.map((x) => x.full_name) };
   } catch (e) {
     return { error: e.message };
   }
@@ -72,10 +131,12 @@ async function checkGithub(name) {
 
 function verdict(ss, ch, gh) {
   if (ss.error || ch.error || gh.error) return { level: 'warn', text: '部分查询失败，重跑一次' };
+  // 只有 skill 生态里的同名才算硬撞车。GitHub 上不同领域的同名仓库很多，不构成冲突
   if (ch.exact.length) return { level: 'bad', text: `clawhub 已被占用：${ch.exact.map((x) => x.install && x.install.reference).join(', ')}` };
   if (ss.exact.length) return { level: 'bad', text: `skills.sh 有同名 skill：${ss.exact.map((x) => x.id).slice(0, 3).join(', ')}` };
-  if (ss.count > 50) return { level: 'warn', text: `太泛（skills.sh ${ss.count} 条命中），检索时会沉底` };
-  if (ss.count > 10) return { level: 'warn', text: `略拥挤（${ss.count} 条命中），至少有辨识度` };
+  // 没有同名时看密度：同词越多，用户搜的时候越难点到你
+  if (ss.count > 50 || gh.total > 200) return { level: 'warn', text: `太泛（skills.sh ${ss.count} 条，GitHub ${gh.total} 个）` };
+  if (ss.count > 10 || gh.total > 50) return { level: 'warn', text: `略拥挤（skills.sh ${ss.count} 条，GitHub ${gh.total} 个）` };
   return { level: 'ok', text: '干净' };
 }
 
@@ -83,6 +144,7 @@ const results = [];
 
 for (const name of names) {
   console.log(`\n=== ${name} ===`);
+  if (results.length) await new Promise((r) => setTimeout(r, 250));
   const [ss, ch, gh] = await Promise.all([checkSkillsSh(name), checkClawhub(name), checkGithub(name)]);
 
   if (ss.error) console.log(C.bad(`skills.sh 查询失败：${ss.error}`));
@@ -107,12 +169,26 @@ for (const name of names) {
   const v = verdict(ss, ch, gh);
   const mark = v.level === 'ok' ? C.ok(v.text) : v.level === 'warn' ? C.warn(v.text) : C.bad(v.text);
   console.log(`判定：${mark}`);
-  results.push({ name, level: v.level, score: v.level === 'ok' ? 0 : v.level === 'warn' ? 1 : 2 });
+  results.push({
+    name,
+    level: v.level,
+    score: v.level === 'ok' ? 0 : v.level === 'warn' ? 1 : 2,
+    hits: ss.count || 0,
+    gh: gh.total || 0,
+  });
 }
 
 if (results.length > 1) {
-  const best = results.filter((r) => r.score === Math.min(...results.map((x) => x.score)));
-  console.log('\n建议：' + best.map((r) => r.name).join(' 或 '));
-  console.log(C.dim('取向：优先无精确同名，其次命中数少的。名字里的高频词（publish、registry、export）能带来检索命中，但太泛会沉底。'));
+  // 按可用度排序：干净在前，撞名在后；同档看 skills.sh 命中数
+  const sorted = [...results].sort((a, b) => a.score - b.score || a.hits - b.hits);
+  console.log('\n=== 排序 ===');
+  for (const r of sorted) {
+    const mark = r.score === 0 ? C.ok('干净') : r.score === 1 ? C.warn('拥挤') : C.bad('撞名');
+    console.log(`  ${mark.padEnd(14)} ${r.name.padEnd(26)} skills.sh ${String(r.hits).padStart(4)} 条  GitHub ${String(r.gh).padStart(4)} 个`);
+  }
+  const clean = sorted.filter((r) => r.score === 0);
+  if (clean.length) console.log('\n建议：' + clean.slice(0, 2).map((r) => r.name).join(' 或 '));
+  else console.log('\n没有干净候选，换一组词再试，或者接受最靠前的那个。');
+  console.log(C.dim('高频词（export、publish、registry）能带来检索命中，但同词太多反而沉底。'));
 }
 console.log('');

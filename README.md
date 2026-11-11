@@ -24,6 +24,8 @@ npx skills add mapleleo-hub/skill-registry-publish
 | `references/channels.md` | 16 个渠道的流量、进入方式、审核规则、失效状态 |
 | `references/pitfalls.md` | 11 条踩坑，每条带现象与根因 |
 | `scripts/check.mjs` | 一条命令查仓库布局、frontmatter、skills.sh 索引、clawhub 下载量 |
+| `scripts/name-check.mjs` | 名字占用检查与候选生成 |
+| `references/positioning.md` | 市场定位、能力矩阵、同类强项、风险 |
 
 ## 两个脚本
 
@@ -43,6 +45,17 @@ skills.sh     1 条  ✓ 无同名
 clawhub    ✓ 未占用
 GitHub        1 个同名仓库  ✓ 无同名
 判定：✓ 干净
+```
+
+只想出候选名时给一句描述：
+
+```bash
+$ node scripts/name-check.mjs --suggest "export chat conversations to markdown"
+
+✓ 干净  chat-publish     skills.sh    2 条  GitHub    9 个
+! 拥挤  chat-archive     skills.sh    6 条  GitHub  359 个
+✗ 撞名  export-chat      skills.sh   16 条  GitHub  115 个
+建议：chat-publish 或 backup-chat
 ```
 
 **发布自检**：
@@ -80,6 +93,10 @@ $ node scripts/check.mjs <owner>/<repo> [skill-name]
 | `openclaw/openclaw` @clawhub | CLI 用法 | 一个渠道 |
 
 本 skill 只做第三方目录的收录机制与曝光验证。
+
+八项能力逐项对比见 [`references/positioning.md`](skills/skill-registry-publish/references/positioning.md)。一句话概括：别人管「文件怎么放过去」，这里管「放过去之后为什么搜不到」。
+
+赛道规模也写在那里，别抱不切实际的期待：同类安装量在 18 到 399 之间。
 
 ## 三条最容易错的
 

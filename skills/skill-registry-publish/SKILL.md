@@ -1,9 +1,9 @@
 ---
 name: skill-registry-publish
-description: 把一个 agent skill 发布到公开目录并尽可能被人发现。含取名检查、repo 布局改造、frontmatter 要件、clawhub 提交、skills.sh 遥测触发、索引验证、曝光优化。用户要说「发布这个 skill」「上架」「起个名字」「让人能搜到」「publish to clawhub/skills.sh」时用。
+description: 把一个 agent skill 发布到公开目录并尽可能被人发现。含取名候选生成与占用检查、repo 布局改造、frontmatter 要件、clawhub 提交、skills.sh 遥测触发、索引验证、曝光优化。用户要说「发布这个 skill」「上架」「起个名字」「让人能搜到」「publish to clawhub/skills.sh」时用。
 license: MIT
 metadata:
-  version: 0.2.0
+  version: 0.3.0
   openclaw:
     requires:
       bins: ["node", "git"]
@@ -37,6 +37,8 @@ triggers:
 
 本 skill 覆盖的是**第三方目录**：clawhub、skills.sh、以及一批自动抓 GitHub 的聚合站。核心价值在收录机制那部分，其他同类没有。
 
+这个赛道不大。同类安装量在 18 到 399 之间，最大的是 `camacho/ai-skills` 的 399。写它的意义是把知识固化，不指望它出圈。完整的市场份额、能力矩阵与风险见 `references/positioning.md`。
+
 ## 两种模式
 
 按请求判断，开头一句话说明当前在哪一档。
@@ -50,8 +52,25 @@ triggers:
 
 ### 0. 取名（发布前必做）
 
+两种用法。已经想好名字就直接查占用：
+
 ```bash
 node scripts/name-check.mjs <候选1> <候选2> --owner <你的账号>
+```
+
+只有一个功能描述，让它出候选并排序：
+
+```bash
+node scripts/name-check.mjs --suggest "export chat conversations to markdown" --owner <你的账号>
+```
+
+输出示例：
+
+```
+✓ 干净  chat-publish     skills.sh    2 条  GitHub    9 个
+! 拥挤  chat-archive     skills.sh    6 条  GitHub  359 个
+✗ 撞名  export-chat      skills.sh   16 条  GitHub  115 个
+建议：chat-publish 或 backup-chat
 ```
 
 查三个地方：skills.sh 有无同名 skill、clawhub 有无同名条目、GitHub 有几个同名仓库。
@@ -62,7 +81,9 @@ node scripts/name-check.mjs <候选1> <候选2> --owner <你的账号>
 | --- | --- | --- |
 | 干净 | 无精确同名，命中数少 | 直接用 |
 | 略拥挤 | 无同名但模糊命中 10 到 50 条 | 可用，注意辨识度 |
-| 撞名 / 太泛 | 有精确同名，或命中超过 50 条 | 换名 |
+| 撞名 / 太泛 | skill 生态里有同名，或命中密度过高 | 换名 |
+
+只有 skills.sh 和 clawhub 里的同名才算硬撞车。GitHub 上不同领域的同名仓库很多，不构成冲突，只计入密度。
 
 实测案例：`ship-skill` 在 skills.sh 有同名、GitHub 73 个同名仓库，属于硬撞车；`skill-registry-publish` 三项全干净。
 
@@ -156,6 +177,19 @@ node scripts/check.mjs <owner>/<repo> <name>
 2. **skills.sh 没有提交入口**。没有表单、没有 publish 命令，只有安装遥测一条路。
 3. **HTTP 200 不等于有内容**。skills.sh 是 SPA，未收录的路径也回 200。必须看 API 的 count。
 
+## 发布前 checklist
+
+六项过一遍再发，跳过的都会在后面变成返工。
+
+- [ ] `npx skills add <owner>/<repo> --list` 能列出这个 skill
+- [ ] `name-check.mjs` 判定不是撞名或太泛
+- [ ] frontmatter 有 `name`、`description`、`license`
+- [ ] 脱敏：脚本里没有个人路径、密钥、账号、内部 URL；示例数据已泛化
+- [ ] README 首屏有安装命令，徽章不指向可能不存在的页面
+- [ ] 仓库 `topics` 填了，这是 GitHub 侧的 SEO，与 description 同等重要
+
+脱敏这条来自同类的实践（`aperivue/medsci-skills` 的 publish-skill 专做这件事）：把自己的 skill 开源前，先查有没有把个人环境带出去。本机路径、内部服务地址、真实人名、测试账号都属于要清掉的东西。
+
 ## 安全边界
 
 1. 改远程前说明目标、版本、文件，得到确认。
@@ -184,6 +218,7 @@ smithery 已于 2026-10-31 关停，不要再试。细节见 `references/channel
 
 ## 参考
 
+- `references/positioning.md`：市场定位、能力矩阵、同类强项、风险
 - `references/channels.md`：16 个渠道的流量、进入方式、失效状态
 - `references/pitfalls.md`：11 条踩坑，带现象与根因
 - `scripts/name-check.mjs`：名字占用检查
