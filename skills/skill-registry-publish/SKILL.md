@@ -1,5 +1,5 @@
 ---
-name: ship-skill
+name: skill-registry-publish
 description: 把一个 agent skill 发布到公开渠道并尽可能被人发现。覆盖 repo 布局改造、frontmatter 要件、clawhub 提交、skills.sh 遥测触发、索引验证、搜索曝光优化。用户要说「发布这个 skill」「上架」「让人能搜到」「publish to clawhub/skills.sh」时用。
 license: MIT
 metadata:
@@ -17,7 +17,7 @@ triggers:
 - skill 收录
 ---
 
-# ship-skill
+# skill-registry-publish
 
 发布 agent skill 并争取被发现。这套流程是在一个真实 skill 上跑完整轮之后固化下来的，每一步都对应一个实际踩过的坑。
 

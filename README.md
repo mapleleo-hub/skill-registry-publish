@@ -1,11 +1,11 @@
-# ship-skill
+# skill-registry-publish
 
 把一个 agent skill 发布到公开渠道，并争取被人发现。
 
 这套流程是在一个真实 skill 上完整跑过一轮之后固化下来的。每一步对应一个实际踩过的坑，不是从文档里抄的。
 
 ```bash
-npx skills add mapleleo-hub/ship-skill
+npx skills add mapleleo-hub/skill-registry-publish
 ```
 
 ## 它解决什么
