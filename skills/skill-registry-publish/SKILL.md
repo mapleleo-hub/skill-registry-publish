@@ -1,9 +1,9 @@
 ---
 name: skill-registry-publish
-description: 把一个 agent skill 发布到公开目录并尽可能被人发现。含赛道分析（同类、能力矩阵、空白点）、取名候选生成与占用检查、repo 布局改造、clawhub 提交、skills.sh 遥测触发、索引验证。用户要说「发布这个 skill」「上架」「起个名字」「这个赛道有谁」「让人能搜到」时用。
+description: 把一个 agent skill 发布到公开目录并尽可能被人发现。含赛道分析（从同类章节标题提炼能力分布）、一键发布、取名候选生成与占用检查、repo 布局改造、clawhub 提交、skills.sh 遥测触发、索引验证。用户要说「发布这个 skill」「上架」「起个名字」「这个赛道有谁」「让人能搜到」时用。
 license: MIT
 metadata:
-  version: 0.4.0
+  version: 0.5.0
   openclaw:
     requires:
       bins: ["node", "git"]
@@ -32,7 +32,7 @@ triggers:
 | --- | --- | --- |
 | 定位 | 这个赛道有谁，它们覆盖什么，哪段空白 | `scripts/analyze.mjs` |
 | 取名 | 候选生成 + 三渠道占用检查 | `scripts/name-check.mjs` |
-| 发布 | 布局、frontmatter、clawhub、skills.sh 遥测 | 手工，见下方流程 |
+| 发布 | 检查、提交、推送、clawhub、触发遥测 | `scripts/publish.mjs` |
 | 验证 | 索引是否真的生效 | `scripts/check.mjs` |
 
 前两个是决策，后两个是执行。跳过前两个直接发，多半会白做。
@@ -40,10 +40,20 @@ triggers:
 ## 一、赛道分析
 
 ```bash
-node scripts/analyze.mjs "agent skill registry" --top 6
+node scripts/analyze.mjs "pdf" --top 6           # 任意赛道都行
 ```
 
-输出三块：同类清单（按安装量）、能力矩阵（每项谁覆盖了）、空白点。
+**不预设维度。** 不同赛道的能力完全不同，预设一套维度只能分析一个赛道。脚本的做法是拉同类 SKILL.md，抽出它们的二级三级章节标题，归一化后按首个动词聚合，统计哪些在多数同类里出现。
+
+```
+=== 能力分布（从章节标题提炼） ===
+  ✓ 4/4 extract        (extract text / extract images / extract pages)
+  2/4      troubleshooting
+  ! 独有  encrypt       ← pdftk-server
+  ! 独有  add           ← anthropics/skills/pdf
+```
+
+`4/4` 是这个赛道的标配能力，`独有` 是差异化空间。同一份脚本换成 `"agent skill registry"` 或 `"image generation"` 都能用，维度是从数据里长出来的，不是写死的。
 
 ```
 === 同类（按安装量） ===
@@ -65,23 +75,11 @@ node scripts/analyze.mjs "agent skill registry" --top 6
 
 判定靠 SKILL.md 正文的关键词正则，不是语义理解。正文取不到的会全部判为未覆盖。结论要回原文核对。
 
-### 十一项能力维度
+### 怎么读结果
 
-这套维度是拆「skill 从写完到被装上」的链路得到的，可以照着评任何一个 skill：
-
-| 维度 | 判定线索 |
-| --- | --- |
-| SKILL.md 写法 | description 当触发器、渐进披露 |
-| frontmatter 校验 | 检查 name/description 合法性 |
-| 多 skill 仓库布局 | skills/ 目录结构、monorepo |
-| 打包与版本管理 | 语义化版本、changelog |
-| 推送到 GitHub | git push、创建仓库 |
-| 分发到本机 agent | `~/.agents/skills`、symlink |
-| 发布到第三方目录 | clawhub、registry publish |
-| 收录与索引验证 | 遥测、api/search、收录 |
-| 名字占用检查 | 撞名检测、改名建议 |
-| 发布前脱敏 | PII、密钥、个人路径 |
-| SEO metadata | topics、可发现性 |
+1. **覆盖数高的维度别硬碰**。所有同类都写的章节，说明那是标配，你写了也不构成差异。
+2. **「独有」不等于机会**。可能只是那个 skill 的特有场景。要看正文确认，再决定要不要补。
+3. **没有共性说明搜错了**。如果一个赛道里全是「独有」章节，大概率是把不相干的项目混进来了，换更精确的词重搜。
 
 ## 二、取名
 
@@ -102,6 +100,24 @@ node scripts/name-check.mjs --suggest "export chat conversations"   # 出候选�
 只有 skills.sh 和 clawhub 的同名算硬撞车。GitHub 上不同领域的同名仓库很多，不构成冲突，只计入密度。
 
 ## 三、发布
+
+一条命令跑完检查和发布：
+
+```bash
+node scripts/publish.mjs --repo <仓库路径> --version 0.5.0 --dry-run   # 先看计划
+node scripts/publish.mjs --repo <仓库路径> --version 0.5.0             # 执行
+```
+
+它依次做：定位 skill、校验 frontmatter 必填项、提交推送、clawhub 发布、触发 skills.sh 遥测、打印后续动作。
+
+两处会停下来要人接手：
+
+- **clawhub 未登录**。设备码必须在浏览器里输入，脚本没法代做。
+- **git 有冲突**。脚本不处理合并，报错退出。
+
+`--dry-run` 只打印计划，`--skip-clawhub` / `--skip-git` 跳过对应步骤。
+
+下面是每一步的细节，出问题时对着看。
 
 ### 3.1 布局
 
@@ -215,6 +231,7 @@ smithery 已于 2026-10-31 关停。
 - `references/positioning.md`：赛道分析的方法、实测案例、局限
 - `references/channels.md`：16 个渠道的流量、进入方式、失效状态
 - `references/pitfalls.md`：11 条踩坑，带现象与根因
-- `scripts/analyze.mjs`：赛道分析
+- `scripts/analyze.mjs`：赛道分析（自下而上提炼维度）
 - `scripts/name-check.mjs`：取名与占用检查
+- `scripts/publish.mjs`：一键发布
 - `scripts/check.mjs`：发布状态自检

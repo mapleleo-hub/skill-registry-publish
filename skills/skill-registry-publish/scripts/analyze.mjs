@@ -1,10 +1,11 @@
 #!/usr/bin/env node
-// 赛道分析：给一个关键词，拉同类 skill 的 SKILL.md，按能力维度打分，找空白位置。
+// 赛道分析：拉同类 skill 的 SKILL.md，从它们的章节标题里自下而上提炼能力维度。
 //
 //   node analyze.mjs "<关键词>" [--top 6] [--json]
 //
-// 用途是回答三个问题：这个赛道有谁、它们各自覆盖了什么、哪一段没人做。
-// 判定靠 SKILL.md 正文的关键词启发式，不是人工逐篇读。会有误判，结论要回到原文核对。
+// 不预设任何维度。不同赛道的能力完全不同，预设一套维度只能分析一个赛道。
+// 做法是把每个 SKILL.md 的二级三级标题抽出来归一化，统计哪些在多数同类里重复出现、
+// 哪些只有一两个有。重复出现的是这个赛道的标配，少数的位置是差异化空间。
 
 const argv = process.argv.slice(2);
 let keyword = '';
@@ -24,25 +25,49 @@ if (!keyword) {
 const C = {
   ok: (s) => `\x1b[32m✓\x1b[0m ${s}`,
   warn: (s) => `\x1b[33m!\x1b[0m ${s}`,
-  bad: (s) => `\x1b[31m✗\x1b[0m ${s}`,
   dim: (s) => `\x1b[2m${s}\x1b[0m`,
   bold: (s) => `\x1b[1m${s}\x1b[0m`,
 };
 
-// 能力维度。正则尽量宽，因为各家措辞差别大，漏判比误判更麻烦
-const CAPS = [
-  { key: 'writing', label: 'SKILL.md 写法', re: /description.*(trigger|触发)|progressive disclosure|渐进披露|how to write|写法/i },
-  { key: 'frontmatter', label: 'frontmatter 校验', re: /frontmatter|yaml.*(valid|check|校验)|schema.*check/i },
-  { key: 'layout', label: '多 skill 仓库布局', re: /skills\/<|repo(?:sitory)? layout|多.?skill|monorepo|目录结构/i },
-  { key: 'version', label: '打包与版本管理', re: /--version|semver|semantic version|changelog|版本号/i },
-  { key: 'github', label: '推送到 GitHub', re: /git push|gh repo create|push.*(github|remote)|创建仓库/i },
-  { key: 'local', label: '分发到本机 agent', re: /~\/\.agents\/skills|symlink|junction|install.*global|-g\b.*安装|实体目录/i },
-  { key: 'registry', label: '发布到第三方目录', re: /clawhub|skills\.sh.*(publish|submit)|registry.*publish|上架/i },
-  { key: 'index', label: '收录与索引验证', re: /telemetry|遥测|api\/search|收录|indexing|索引/i },
-  { key: 'name', label: '名字占用检查', re: /name.?check|撞名|name collision|名字占用|rename/i },
-  { key: 'redact', label: '发布前脱敏', re: /\bPII\b|redact|sanitize|脱敏|secrets? scan|凭据/i },
-  { key: 'seo', label: 'SEO metadata', re: /\btopics\b|seo|discoverab|可发现/i },
+// 文档结构型标题，不算能力。几乎每个 skill 都有，单列出来不参与能力统计
+const STRUCTURAL =
+  /^(usage|install|installation|quick ?start|example|examples|setup|requirements?|license|overview|intro|introduction|about|when to use|用法|安装|示例|快速开始|概览|简介|许可|前置条件)$/i;
+
+// 归一化：去编号、标点、括号注、常见修饰
+const SYNONYMS = [
+  [/^(step|phase|stage)\s*\d+/i, 'step'],
+  [/\b(optional|advanced|basic|simple|full|complete)\b/gi, ''],
 ];
+
+function normHeading(h) {
+  let s = String(h)
+    .replace(/^\d+[.)]\s*/, '')
+    .replace(/[*`_~]/g, '')
+    .replace(/^[^\p{L}\p{N}]+/u, '')
+    .trim()
+    .toLowerCase();
+  for (const [re, rep] of SYNONYMS) s = s.replace(re, rep);
+  return s.replace(/\s+/g, ' ').trim();
+}
+
+// 聚到「能力」级别，不聚到具体功能。
+// 英文取首个词：extract text / extract images / extract pages 合成 extract 一组，
+// 这样看到的才是「提取」这项能力，而不是三个零散功能。
+// 中文没有词边界，取前两个字。
+function clusterKey(s) {
+  if (!s) return '';
+  if (/[\u4e00-\u9fa5]/.test(s)) return s.slice(0, 2);
+  return s.split(' ')[0].replace(/[^a-z0-9-]/g, '');
+}
+
+function extractHeadings(md) {
+  const out = [];
+  for (const line of md.split('\n')) {
+    const m = line.match(/^(#{2,3})\s+(.+?)\s*$/);
+    if (m) out.push(m[2]);
+  }
+  return out;
+}
 
 function parseId(id) {
   const parts = String(id).split('/');
@@ -51,19 +76,17 @@ function parseId(id) {
 }
 
 async function fetchSkillMd({ owner, repo, skill }) {
-  const paths = [
-    `skills/${skill}/SKILL.md`,
-    `${skill}/SKILL.md`,
-    'SKILL.md',
-    `skills/${repo}/SKILL.md`,
-  ];
+  const paths = [`skills/${skill}/SKILL.md`, `${skill}/SKILL.md`, 'SKILL.md', `skills/${repo}/SKILL.md`];
   for (const p of paths) {
-    const url = `https://raw.githubusercontent.com/${owner}/${repo}/main/${p}`;
-    try {
-      const r = await fetch(url, { signal: AbortSignal.timeout(8000) });
-      if (r.ok) return await r.text();
-    } catch {
-      /* 试下一个路径 */
+    for (const branch of ['main', 'master']) {
+      try {
+        const r = await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${p}`, {
+          signal: AbortSignal.timeout(8000),
+        });
+        if (r.ok) return await r.text();
+      } catch {
+        /* 试下一个 */
+      }
     }
   }
   return '';
@@ -77,102 +100,111 @@ async function search(q) {
   return r.json();
 }
 
-// 单个模糊查询会被热门大词淹没：搜 "skill publish" 排前面的是 find-skills、azure-deploy 这类
-// 与发布无关的高安装量 skill。所以拆成几个变体词分别搜，合并后按词相关性过滤。
-const variants = [
-  keyword,
-  keyword.replace(/\s+/g, '-'),
-  'skill-publish',
-  'publish-skill',
-  'skill-publisher',
-  'skill-publishing',
-];
-const words = keyword.toLowerCase().split(/[\s-]+/).filter((w) => w.length > 3);
-
-const seenIds = new Set();
-const pool = [];
-let reportedCount = 0;
-for (const q of [...new Set(variants)]) {
+// 单个模糊查询会被热门大词淹没，拆成变体分别搜再合并
+const variants = [...new Set([keyword, keyword.replace(/\s+/g, '-')])];
+// 长度阈值原来写 >3，导致 pdf、ocr 这类三字关键词被过滤成空数组，
+// every() 对空数组恒真，相关性过滤整体失效。改成 >=2
+const words = keyword.toLowerCase().split(/[\s-]+/).filter((w) => w.length >= 2);
+const pool = new Map();
+for (const q of variants) {
   try {
     const d = await search(q);
-    reportedCount = Math.max(reportedCount, d.count || 0);
-    for (const s of d.skills || []) {
-      if (seenIds.has(s.id) || !parseId(s.id)) continue;
-      seenIds.add(s.id);
-      pool.push(s);
-    }
+    for (const s of d.skills || []) if (!pool.has(s.id) && parseId(s.id)) pool.set(s.id, s);
   } catch {
     /* 某个变体失败不影响整体 */
   }
 }
 
-// 相关性用交集：所有关键词都要出现在 id 里。
-// 用并集会把 find-skills、azure-deploy 这类只含 "skill" 的高安装量项目拉进来，淹没真正的同类。
-const strict = pool.filter((s) => {
-  const id = s.id.toLowerCase();
-  return words.every((w) => id.includes(w));
-});
-// 交集为空时退一步，只要求含最后一个词（通常是动作词）
-const loose = pool.filter((s) => s.id.toLowerCase().includes(words[words.length - 1] || ''));
-const data = { count: reportedCount, skills: strict.length ? strict : loose.length ? loose : pool };
-if (!strict.length && data.skills.length) {
-  console.log(C.dim('提示：没有 id 同时含全部关键词的同类，已退化为只匹配动作词。结果偏杂，请人工筛。'));
-}
+const strict = [...pool.values()].filter((s) => words.every((w) => s.id.toLowerCase().includes(w)));
+const picked = (strict.length ? strict : [...pool.values()])
+  .sort((a, b) => (b.installs || 0) - (a.installs || 0))
+  .slice(0, top);
 
-// 按安装量取前 N，同 id 去重
-const seen = new Set();
-const picked = [];
-for (const s of [...data.skills].sort((a, b) => (b.installs || 0) - (a.installs || 0))) {
-  if (seen.has(s.id)) continue;
-  seen.add(s.id);
-  picked.push(s);
-  if (picked.length >= top) break;
-}
+console.log(`\n${C.bold('关键词')} ${keyword}   分析 ${picked.length} 个同类`);
 
-console.log(`\n${C.bold('关键词')} ${keyword}   候选 ${data.count || data.skills.length} 条，取前 ${picked.length} 个分析\n`);
-
-const rows = [];
+const docs = [];
 for (const s of picked) {
-  const id = parseId(s.id);
-  const md = await fetchSkillMd(id);
-  const hits = {};
-  for (const c of CAPS) hits[c.key] = c.re.test(md);
-  rows.push({ id: s.id, installs: s.installs || 0, chars: md.length, hits });
+  const md = await fetchSkillMd(parseId(s.id));
+  docs.push({
+    id: s.id,
+    installs: s.installs || 0,
+    md,
+    headings: extractHeadings(md).map(normHeading).filter(Boolean),
+  });
 }
 
-// 同类清单
-console.log(C.bold('=== 同类（按安装量） ==='));
-for (const r of rows) {
-  console.log(`  ${String(r.installs).padStart(7)}  ${r.id}${r.chars ? '' : C.dim('  (正文取不到)')}`);
+console.log('\n' + C.bold('=== 同类（按安装量） ==='));
+for (const d of docs) {
+  console.log(`  ${String(d.installs).padStart(7)}  ${d.id}${d.md ? '' : C.dim('  (正文取不到)')}`);
 }
 
-// 能力矩阵
-console.log('\n' + C.bold('=== 能力矩阵 ==='));
-const header = '  ' + '能力'.padEnd(22) + '覆盖   谁有';
-console.log(C.dim(header));
-const blanks = [];
-for (const c of CAPS) {
-  const have = rows.filter((r) => r.hits[c.key]);
-  const mark = have.length === 0 ? C.bad('0/' + rows.length) : have.length === rows.length ? C.ok(have.length + '/' + rows.length) : C.warn(have.length + '/' + rows.length);
-  const who = have.length ? have.map((r) => r.id.split('/')[0]).slice(0, 3).join(', ') : C.dim('空白');
-  console.log(`  ${c.label.padEnd(22)} ${mark.padEnd(14)} ${who}`);
-  if (!have.length) blanks.push(c.label);
+// 按聚类键归并，记录每组的覆盖面
+const groups = new Map();
+for (const d of docs) {
+  const seen = new Set();
+  for (const h of d.headings) {
+    const k = clusterKey(h);
+    if (!k || seen.has(k)) continue;
+    seen.add(k);
+    if (!groups.has(k)) groups.set(k, { label: k, variants: new Set(), who: new Set() });
+    groups.get(k).variants.add(h);
+    groups.get(k).who.add(d.id);
+  }
 }
 
-// 结论
-console.log('\n' + C.bold('=== 空白点 ==='));
-if (blanks.length) {
-  for (const b of blanks) console.log('  ' + C.ok(b));
-  console.log(C.dim('  这几项没人覆盖，是切入位置。但先确认它们真的是需求，而不是同行也没解决的问题。'));
+const total = docs.filter((d) => d.md).length || 1;
+const rows = [...groups.values()]
+  .map((v) => ({ label: v.label, variants: [...v.variants], count: v.who.size, who: [...v.who] }))
+  .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+
+const structural = rows.filter((r) => STRUCTURAL.test(r.label));
+const capability = rows.filter((r) => !STRUCTURAL.test(r.label));
+
+console.log('\n' + C.bold('=== 能力分布（从章节标题提炼） ==='));
+for (const r of capability.slice(0, 20)) {
+  const tag =
+    r.count >= total * 0.6
+      ? C.ok(String(r.count) + '/' + total)
+      : r.count === 1
+        ? C.warn('独有')
+        : String(r.count) + '/' + total;
+  const variants = r.variants.length > 1 ? C.dim(' (' + r.variants.slice(0, 3).join(' / ') + ')') : '';
+  const who = r.count === 1 ? C.dim(' ← ' + r.who[0]) : '';
+  console.log(`  ${tag.padEnd(14)} ${r.label.slice(0, 24).padEnd(26)}${variants}${who}`);
+}
+
+if (structural.length) {
+  console.log('\n' + C.dim('  文档结构型（不计入能力）：' + structural.map((r) => r.label).slice(0, 8).join('、')));
+}
+
+// 差异化空间 = 只被少数同类覆盖的章节
+const rare = capability.filter((r) => r.count <= Math.max(1, Math.floor(total * 0.34)));
+console.log('\n' + C.bold('=== 差异化空间 ==='));
+if (rare.length) {
+  for (const r of rare) {
+    console.log(`  ${r.label.slice(0, 38).padEnd(40)} ${C.dim('← ' + r.who.map((w) => w.split('/')[0]).join(', '))}`);
+  }
+  console.log(C.dim('\n  这些章节只有少数同类有。可能是差异化点，也可能是那个 skill 的特有场景，需要看正文确认。'));
 } else {
-  console.log(C.dim('  没有空白，每个维度都有人做。差异化要往深度或场景走，不要靠补覆盖。'));
+  console.log(C.dim('  没有明显差异，所有章节都在多数同类里出现。这个赛道已经做满了。'));
 }
 
-const withMd = rows.filter((r) => r.chars).length;
-console.log(C.dim(`\n判定依据：${withMd}/${rows.length} 个 SKILL.md 正文可读，靠关键词正则匹配，不是语义理解。`));
-console.log(C.dim('两点局限：候选只按 id 里的词筛，同词不同义的项目会混进来（比如 registry 既能指 skill 目录也能指容器镜像仓库）；'));
-console.log(C.dim('正文取不到的会全部判为未覆盖。结论要回原文核对，别直接拿去当决策依据。\n'));
+const withMd = docs.filter((d) => d.md).length;
+console.log(C.dim(`\n判定依据：${withMd}/${docs.length} 个 SKILL.md 可读，标题归一化后按前两词/前两字聚类。`));
+console.log(C.dim('局限：聚类是字符串级的，「发布流程」和「发布步骤」可能归到一起也可能没归上；'));
+console.log(C.dim('作者不写小标题的 skill 提取不到内容。结论要回原文核对。\n'));
 
 if (json) {
-  console.log(JSON.stringify({ keyword, count: data.count, rows, blanks }, null, 2));
+  console.log(
+    JSON.stringify(
+      {
+        keyword,
+        docs: docs.map((d) => ({ id: d.id, installs: d.installs, chars: d.md.length })),
+        capability,
+        structural,
+      },
+      null,
+      2
+    )
+  );
 }
