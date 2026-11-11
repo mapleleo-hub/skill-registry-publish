@@ -25,7 +25,27 @@ npx skills add mapleleo-hub/skill-registry-publish
 | `references/pitfalls.md` | 11 条踩坑，每条带现象与根因 |
 | `scripts/check.mjs` | 一条命令查仓库布局、frontmatter、skills.sh 索引、clawhub 下载量 |
 
-## 自检脚本
+## 两个脚本
+
+**取名检查**（发布前跑，避免撞名）：
+
+```bash
+$ node scripts/name-check.mjs ship-skill skill-registry-publish --owner <你的账号>
+
+=== ship-skill ===
+skills.sh    65 条  ✗ 有同名
+clawhub    ✓ 未占用
+GitHub       73 个同名仓库  ! 存在同名
+判定：✗ skills.sh 有同名 skill：zihad550/skills/ship-skill
+
+=== skill-registry-publish ===
+skills.sh     1 条  ✓ 无同名
+clawhub    ✓ 未占用
+GitHub        1 个同名仓库  ✓ 无同名
+判定：✓ 干净
+```
+
+**发布自检**：
 
 ```bash
 $ node scripts/check.mjs <owner>/<repo> [skill-name]
@@ -47,6 +67,19 @@ $ node scripts/check.mjs <owner>/<repo> [skill-name]
 === clawhub ===
   ✓ 已发布  89 次下载
 ```
+
+## 和同类的关系
+
+这个领域已有几个工具，各管一段：
+
+| 同类 | 它解决什么 | 本 skill 的不同 |
+| --- | --- | --- |
+| `mercatorproj/skill-publisher` | 校验、打包、推到自己仓库 | 不管第三方目录 |
+| `zihad550/skills` @ship-skill | 铺到本机各 agent | 本地分发，不涉曝光 |
+| `glebis/claude-skills` @publish-skill | 发到自建站点 | 单一出口 |
+| `openclaw/openclaw` @clawhub | CLI 用法 | 一个渠道 |
+
+本 skill 只做第三方目录的收录机制与曝光验证。
 
 ## 三条最容易错的
 

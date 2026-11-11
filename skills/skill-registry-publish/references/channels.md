@@ -106,3 +106,16 @@ Anthropic 的 Claude 目录（claude.ai/directory）2026-09-25 开放自助提�
 ## 选不选 MCP 形态
 
 把能力做成 MCP server 能进 Smithery 之外的 MCP 生态，但代价是要维护一个常驻服务，且用户多一步配置。skill 形态的优势是 `npx skills add` 一条命令装完，转化路径更短。本地工具类能力优先做 skill。
+
+## 同类的分工
+
+搜 publish、registry 类关键词会命中几十个 skill，多数是「把文件放到某个地方」。按出口分：
+
+| 出口 | 代表 | 与本 skill 的关系 |
+| --- | --- | --- |
+| 自己的 GitHub 仓库 | `mercatorproj/skill-publisher` | 它的上游，本 skill 假设仓库已存在 |
+| 本机各 agent 目录 | `zihad550/skills` @ship-skill | 互补，一个对内一个对外 |
+| 自建站点 | `glebis/claude-skills` @publish-skill | 不同出口 |
+| 单个官方渠道 | `openclaw/openclaw` @clawhub | 它讲命令，本 skill 讲为什么有时命令没用 |
+
+判断标准很简单：如果问题是「文件怎么放过去」，用别的；如果问题是「放过去之后为什么搜不到」，用这个。
