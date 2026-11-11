@@ -79,6 +79,12 @@ node scripts/generalize.mjs <仓库路径>
 
 
 
+### 输出语言
+
+`check.mjs`、`generalize.mjs`、`publish.mjs` 的输出跟随系统 locale，也可用 `REG_LANG=en` 或 `REG_LANG=zh` 强制。
+
+`analyze.mjs` 和 `name-check.mjs` 目前只有中文输出。它们的输出是分析结果和候选列表，结构简单，非中文用户看数字和 ID 也能用，所以没做。
+
 ## 一、赛道分析
 
 ```bash

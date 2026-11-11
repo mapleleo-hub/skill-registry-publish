@@ -10,6 +10,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
+import { t } from './lib-i18n.mjs';
 
 const args = process.argv.slice(2);
 const opt = { repo: '', version: '', dryRun: false, skipClawhub: false, skipGit: false };
@@ -54,38 +55,38 @@ let failed = false;
 
 try {
   // 0. 泛化检查：个人路径、内网地址、凭据会挡住别人使用，先拦一道
-  console.log(C.step(0, '泛化检查'));
+  console.log(C.step(0, t('泛化检查', 'Generalization check')));
   const gen = sh('node', [path.join(SCRIPT_DIR, 'generalize.mjs'), repo], { timeout: 60000 });
   const genOut = (gen.stdout || '') + (gen.stderr || '');
   const blocks = (genOut.match(/✗/g) || []).length;
   if (blocks) {
-    console.log(C.bad(`发现 ${blocks} 处必须改的问题`));
+    console.log(C.bad(t(`发现 ${blocks} 处必须改的问题`, `${blocks} blocking issues found`)));
     for (const line of genOut.split('\n').filter((l) => l.trim() && !l.includes('===') && !l.startsWith('共 ')).slice(0, 10)) {
       console.log(C.dim('  ' + line.trim()));
     }
-    throw new Error('泛化检查未通过，先修完 block 项。单跑：node scripts/generalize.mjs <repo>');
+    throw new Error(t('泛化检查未通过，先修完 block 项。单跑：node scripts/generalize.mjs <repo>', 'Generalization check failed. Fix the block items first. Run alone: node scripts/generalize.mjs <repo>'));
   }
-  console.log(C.ok('无阻断项'));
+  console.log(C.ok(t('无阻断项', 'no blockers')));
 
   // 1. 定位 skill
-  console.log(C.step(1, '定位 skill'));
+  console.log(C.step(1, t('定位 skill', 'Locate skill')));
   const skillsDir = path.join(repo, 'skills');
-  if (!existsSync(skillsDir)) throw new Error('仓库里没有 skills/ 目录');
+  if (!existsSync(skillsDir)) throw new Error(t('仓库里没有 skills/ 目录', 'No skills/ directory in repo'));
   const names = readdirSync(skillsDir, { withFileTypes: true })
     .filter((d) => d.isDirectory())
     .map((d) => d.name)
     .filter((n) => existsSync(path.join(skillsDir, n, 'SKILL.md')));
-  if (!names.length) throw new Error('skills/ 下没有含 SKILL.md 的目录');
+  if (!names.length) throw new Error(t('skills/ 下没有含 SKILL.md 的目录', 'No directory with SKILL.md under skills/'));
   if (names.length > 1) {
-    console.log(C.warn(`发现 ${names.length} 个 skill：${names.join(', ')}`));
-    console.log(C.dim('一次发一个，用 --skill 指定（本脚本暂只发目录里唯一或第一个）'));
+    console.log(C.warn(t(`发现 ${names.length} 个 skill：${names.join(', ')}`, `${names.length} skills found: ${names.join(', ')}`)));
+    console.log(C.dim(t('一次发一个，用 --skill 指定（本脚本暂只发目录里唯一或第一个）', 'One at a time; this script publishes the first directory only')));
   }
   const skill = names[0];
   const skillDir = path.join(skillsDir, skill);
   console.log(C.ok(skill));
 
   // 2. frontmatter 必须项
-  console.log(C.step(2, 'frontmatter 检查'));
+  console.log(C.step(2, t('frontmatter 检查', 'Frontmatter check')));
   // Windows 上文件是 CRLF，正则和行尾匹配都要兼容，否则 frontmatter 一段都读不到
   const md = readFileSync(path.join(skillDir, 'SKILL.md'), 'utf8').replace(/\r\n/g, '\n');
   const fm = (md.match(/^---\n([\s\S]*?)\n---/) || [])[1] || '';
@@ -95,19 +96,19 @@ try {
     ['description', has('description')],
     ['license', has('license')],
   ];
-  for (const [k, v] of checks) console.log(v ? C.ok(k) : C.bad(k + ' 缺失或与目录名不一致'));
-  if (checks.some(([, v]) => !v)) throw new Error('frontmatter 不完整，先修');
+  for (const [k, v] of checks) console.log(v ? C.ok(k) : C.bad(t(k + ' 缺失或与目录名不一致', k + ' missing or does not match directory')));
+  if (checks.some(([, v]) => !v)) throw new Error(t('frontmatter 不完整，先修', 'frontmatter incomplete'));
 
   // 3. git
-  console.log(C.step(3, '提交并推送'));
+  console.log(C.step(3, t('提交并推送', 'Commit and push')));
   if (opt.skipGit) {
-    console.log(C.dim('已跳过'));
+    console.log(C.dim(t('已跳过', 'skipped')));
   } else {
     const status = run('git', ['-C', repo, 'status', '--porcelain']);
-    if (!status) console.log(C.dim('工作区干净，无需提交'));
+    if (!status) console.log(C.dim(t('工作区干净，无需提交', 'clean tree, nothing to commit')));
     else {
       const files = status.split('\n').length;
-      console.log(C.dim(`${files} 个文件有改动`));
+      console.log(C.dim(t(`${files} 个文件有改动`, `${files} files changed`)));
       if (opt.dryRun) console.log(C.dim('[dry-run] 将执行 git add -A && commit && push'));
       else {
         run('git', ['-C', repo, 'add', '-A']);
@@ -123,17 +124,17 @@ try {
           '-c', 'user.email=' + owner + '@users.noreply.github.com',
           'commit', '-m', `发布 ${skill} ${opt.version || ''}`.trim(),
         ]);
-        console.log(C.ok('已提交'));
+        console.log(C.ok(t('已提交', 'committed')));
         run('git', ['-C', repo, 'push']);
-        console.log(C.ok('已推送'));
+        console.log(C.ok(t('已推送', 'pushed')));
       }
     }
   }
 
   // 4. clawhub
-  console.log(C.step(4, 'clawhub 发布'));
+  console.log(C.step(4, t('clawhub 发布', 'Publish to clawhub')));
   if (opt.skipClawhub) {
-    console.log(C.dim('已跳过'));
+    console.log(C.dim(t('已跳过', 'skipped')));
   } else {
     const who = sh('npx', ['-y', 'clawhub', 'whoami']);
     if (who.status !== 0 || /Not logged in/i.test(who.stdout + who.stderr)) {
@@ -141,7 +142,7 @@ try {
       console.log(C.dim('  未登录。人工跑一次 npx clawhub login，设备码要在浏览器里输入。'));
       console.log(C.dim('  登录后重跑本脚本，或手动执行 clawhub skill publish'));
     } else if (!opt.version) {
-      console.log(C.bad('缺 --version，clawhub 要求语义化版本'));
+      console.log(C.bad(t('缺 --version，clawhub 要求语义化版本', '--version required, clawhub needs semver')));
     } else if (opt.dryRun) {
       console.log(C.dim(`[dry-run] 将发布 ${skill}@${opt.version}`));
     } else {
@@ -151,16 +152,16 @@ try {
       ]);
       const out = (r.stdout + r.stderr).split('\n').filter((l) => l.includes('submitted') || l.includes('Error'));
       if (out.length) console.log(C.ok(out[out.length - 1].trim()));
-      else console.log(r.status === 0 ? C.ok('已提交') : C.bad('发布失败，手动跑一次看详细报错'));
+      else console.log(r.status === 0 ? C.ok(t('已提交', 'committed')) : C.bad(t('发布失败，手动跑一次看详细报错', 'publish failed, run it by hand to see the full error')));
     }
   }
 
   // 5. 触发 skills.sh 遥测
-  console.log(C.step(5, '触发 skills.sh 遥测'));
+  console.log(C.step(5, t('触发 skills.sh 遥测', 'Trigger skills.sh telemetry')));
   const remote = sh('git', ['-C', repo, 'remote', 'get-url', 'origin']).stdout.trim();
   const m = remote.match(/github\.com[:/]([^/]+)\/([^/.]+)/);
   if (!m) {
-    console.log(C.warn('拿不到 GitHub 仓库地址，跳过'));
+    console.log(C.warn(t('拿不到 GitHub 仓库地址，跳过', 'cannot read GitHub remote, skipped')));
   } else {
     const [owner, name] = [m[1], m[2]];
     const disabled = process.env.DISABLE_TELEMETRY || process.env.DO_NOT_TRACK;
@@ -181,10 +182,10 @@ try {
   }
 
   // 6. 收尾
-  console.log(C.step(6, '后续'));
-  console.log(C.dim('clawhub 有 24 到 72 小时安全扫描，期间不公开。'));
-  console.log(C.dim('skills.sh 索引是异步的，跑 check.mjs 看 count 是否大于 0。'));
-  console.log(C.dim('命令：node scripts/check.mjs <owner>/<repo> ' + skill));
+  console.log(C.step(6, t('后续', 'Next')));
+  console.log(C.dim(t('clawhub 有 24 到 72 小时安全扫描，期间不公开。', 'clawhub runs a 24-72h security scan before going public.')));
+  console.log(C.dim(t('skills.sh 索引是异步的，跑 check.mjs 看 count 是否大于 0。', 'skills.sh indexing is async; run check.mjs and look for count > 0.')));
+  console.log(C.dim(t('命令：', 'verify: ') + 'node scripts/check.mjs <owner>/<repo> ' + skill));
 } catch (e) {
   failed = true;
   console.log('\n' + C.bad(String(e.message || e)));

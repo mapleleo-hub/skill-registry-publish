@@ -12,6 +12,7 @@
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
+import { t } from './lib-i18n.mjs';
 
 const argv = process.argv.slice(2);
 const target = argv.find((a) => !a.startsWith('--'));
@@ -146,9 +147,9 @@ if (asJson) {
   console.log(JSON.stringify(groups, null, 2));
 } else {
   const titles = {
-    block: '必须改（别人跑不起来或看到错误指引）',
-    warn: '建议改（能用，但表述不通用）',
-    info: '确认即可（通常是刻意保留的）',
+    block: t('必须改（别人跑不起来或看到错误指引）', 'Must fix (blocks others from running it)'),
+    warn: t('建议改（能用，但表述不通用）', 'Should fix (works, but text is not generic)'),
+    info: t('确认即可（通常是刻意保留的）', 'Confirm only (usually intentional)'),
   };
   let total = 0;
   for (const level of ['block', 'warn', 'info']) {
@@ -167,7 +168,7 @@ if (asJson) {
       console.log(C.dim(`    …另有 ${list.length - shown.length} 处`));
     }
   }
-  if (!total) console.log('\n没有发现个人痕迹。\n');
+  if (!total) console.log(t('\n没有发现个人痕迹。\n', '\nNo personal traces found.\n'));
   else {
     console.log(`\n共 ${total} 处。block 项清零才能发，warn 项逐条确认。`);
     console.log(C.dim('这个脚本只扫文本。逻辑上假设了某台机器（例如默认某个端口已被占用、依赖某个特定工具已装）要靠人读代码判断。\n'));
