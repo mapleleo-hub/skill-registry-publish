@@ -81,22 +81,42 @@ $ node scripts/check.mjs <owner>/<repo> [skill-name]
   ✓ 已发布  89 次下载
 ```
 
+## 四个环节
+
+| 环节 | 工具 | 回答什么 |
+| --- | --- | --- |
+| 赛道分析 | `scripts/analyze.mjs` | 这个赛道有谁，哪段没人做 |
+| 取名 | `scripts/name-check.mjs` | 叫什么名，会不会撞车 |
+| 发布 | 手工流程 | 怎么把文件放过去 |
+| 验证 | `scripts/check.mjs` | 放过去之后真的被收录了吗 |
+
+赛道分析输出能力矩阵，十一个维度逐项标出谁覆盖了：
+
+```bash
+$ node scripts/analyze.mjs "agent skill registry" --top 5
+
+=== 能力矩阵 ===
+  能力                    覆盖   谁有
+  SKILL.md 写法            ! 1/5 gentleman-programming
+  发布到第三方目录         ✗ 0/5 空白
+  收录与索引验证           ! 1/5 neeeophytee
+=== 空白点 ===
+  ✓ 打包与版本管理
+```
+
+空白点不等于机会，可能是伪需求。方法论与局限见 [`references/positioning.md`](skills/skill-registry-publish/references/positioning.md)。
+
 ## 和同类的关系
 
-这个领域已有几个工具，各管一段：
+| 同类 | 它解决什么 |
+| --- | --- |
+| `mercatorproj/skill-publisher` | 校验、打包、推到自己仓库 |
+| `zihad550/skills` @ship-skill | 铺到本机各 agent |
+| `glebis/claude-skills` @publish-skill | 发到自建站点 |
+| `openclaw/openclaw` @clawhub | clawhub CLI 用法 |
+| `stealth-factory/skills` @skill-publishing | SKILL.md 写法与 CLI 参数 |
 
-| 同类 | 它解决什么 | 本 skill 的不同 |
-| --- | --- | --- |
-| `mercatorproj/skill-publisher` | 校验、打包、推到自己仓库 | 不管第三方目录 |
-| `zihad550/skills` @ship-skill | 铺到本机各 agent | 本地分发，不涉曝光 |
-| `glebis/claude-skills` @publish-skill | 发到自建站点 | 单一出口 |
-| `openclaw/openclaw` @clawhub | CLI 用法 | 一个渠道 |
-
-本 skill 只做第三方目录的收录机制与曝光验证。
-
-八项能力逐项对比见 [`references/positioning.md`](skills/skill-registry-publish/references/positioning.md)。一句话概括：别人管「文件怎么放过去」，这里管「放过去之后为什么搜不到」。
-
-赛道规模也写在那里，别抱不切实际的期待：同类安装量在 18 到 399 之间。
+一句话分辨：别人管「文件怎么放过去」，这里管「放过去之后为什么搜不到」。
 
 ## 三条最容易错的
 
