@@ -1,134 +1,131 @@
 # skill-registry-publish
 
-把一个 agent skill 发布到公开渠道，并争取被人发现。
+Take an agent skill from personal use to public release, then get it found.
 
-这套流程是在一个真实 skill 上完整跑过一轮之后固化下来的。每一步对应一个实际踩过的坑，不是从文档里抄的。
+Most skills live and die on one machine. The gap between "it works for me" and "someone else can install it" has two parts: the personal traces left in the code, and the fact that publishing to a registry does not mean the registry indexes you.
 
 ```bash
 npx skills add mapleleo-hub/skill-registry-publish
 ```
 
-## 它解决什么
+[中文说明](README.zh.md)
 
-写完一个 skill，能装、能跑，然后呢。
+## Five stages
 
-渠道有十几个，每个的收录机制都不一样：有的要 CLI 发布加人工审核，有的只认安装遥测，有的自动抓 GitHub，有的已经关停但榜单上还挂着。而"符合 SKILL.md 规范"和"被目录收录"是两件事，混起来会白白浪费几天。
-
-这个 skill 把这些整理成一条可执行的路径，并给出唯一的可信验证方式。
-
-## 内容
-
-| 文件 | 作用 |
-| --- | --- |
-| `SKILL.md` | 5 步流程、三个反直觉事实、不要做的事 |
-| `references/channels.md` | 16 个渠道的流量、进入方式、审核规则、失效状态 |
-| `references/pitfalls.md` | 11 条踩坑，每条带现象与根因 |
-| `scripts/check.mjs` | 一条命令查仓库布局、frontmatter、skills.sh 索引、clawhub 下载量 |
-| `scripts/name-check.mjs` | 名字占用检查与候选生成 |
-| `references/positioning.md` | 市场定位、能力矩阵、同类强项、风险 |
-
-## 两个脚本
-
-**取名检查**（发布前跑，避免撞名）：
-
-```bash
-$ node scripts/name-check.mjs ship-skill skill-registry-publish --owner <你的账号>
-
-=== ship-skill ===
-skills.sh    65 条  ✗ 有同名
-clawhub    ✓ 未占用
-GitHub       73 个同名仓库  ! 存在同名
-判定：✗ skills.sh 有同名 skill：zihad550/skills/ship-skill
-
-=== skill-registry-publish ===
-skills.sh     1 条  ✓ 无同名
-clawhub    ✓ 未占用
-GitHub        1 个同名仓库  ✓ 无同名
-判定：✓ 干净
-```
-
-只想出候选名时给一句描述：
-
-```bash
-$ node scripts/name-check.mjs --suggest "export chat conversations to markdown"
-
-✓ 干净  chat-publish     skills.sh    2 条  GitHub    9 个
-! 拥挤  chat-archive     skills.sh    6 条  GitHub  359 个
-✗ 撞名  export-chat      skills.sh   16 条  GitHub  115 个
-建议：chat-publish 或 backup-chat
-```
-
-**发布自检**：
-
-```bash
-$ node scripts/check.mjs <owner>/<repo> [skill-name]
-
-=== 仓库 ===
-  owner/repo  公开  分支 main  ★0
-
-=== 布局 ===
-  ✓ skills/my-skill/SKILL.md
-
-=== frontmatter ===
-  ✓ name: my-skill（与目录名一致）
-  ✓ description: ...
-  ✓ license: MIT
-
-=== skills.sh ===
-  ✗ 未收录（搜索结果 0 条）
-
-=== clawhub ===
-  ✓ 已发布  89 次下载
-```
-
-## 四个环节
-
-| 环节 | 工具 | 回答什么 |
+| Stage | What it does | Tool |
 | --- | --- | --- |
-| 赛道分析 | `scripts/analyze.mjs` | 这个赛道有谁，哪段没人做 |
-| 取名 | `scripts/name-check.mjs` | 叫什么名，会不会撞车 |
-| 发布 | 手工流程 | 怎么把文件放过去 |
-| 验证 | `scripts/check.mjs` | 放过去之后真的被收录了吗 |
+| Generalize | Strip personal paths, internal addresses, credentials | `scripts/generalize.mjs` |
+| Position | Who else is in this space, what is left uncovered | `scripts/analyze.mjs` |
+| Name | Generate candidates, check collisions in three registries | `scripts/name-check.mjs` |
+| Publish | Validate, commit, push, clawhub, trigger telemetry | `scripts/publish.mjs` |
+| Verify | Did the index actually pick it up | `scripts/check.mjs` |
 
-赛道分析输出能力矩阵，十一个维度逐项标出谁覆盖了：
+The first two are decisions. Skipping them means re-doing work later.
+
+## Generalization
+
+A skill built for one machine carries that machine's fingerprints. A hardcoded `D:\work\data` in an error message sends every new user down a dead end.
 
 ```bash
-$ node scripts/analyze.mjs "agent skill registry" --top 5
+$ node scripts/generalize.mjs <repo>
 
-=== 能力矩阵 ===
-  能力                    覆盖   谁有
-  SKILL.md 写法            ! 1/5 gentleman-programming
-  发布到第三方目录         ✗ 0/5 空白
-  收录与索引验证           ! 1/5 neeeophytee
-=== 空白点 ===
-  ✓ 打包与版本管理
+=== Must fix (blocks others from running it) ===
+✗ Absolute path  src/config.mjs:12
+  "D:/work/data/x.json"
+✗ Internal address  src/config.mjs:15
+  192.168.1.20:8080
+✗ Credential shape  src/config.mjs:18
+  sk-abcdefghijklmnopqrstuvwxyz123456
 ```
 
-空白点不等于机会，可能是伪需求。方法论与局限见 [`references/positioning.md`](skills/skill-registry-publish/references/positioning.md)。
+Three levels: `block` (must be zero before release), `warn` (personal usernames, private project names, numbers that will expire), `info` (the account name in your install command, which belongs there).
 
-## 和同类的关系
+Wired into `publish.mjs` as stage 0. Any `block` finding aborts the release.
 
-| 同类 | 它解决什么 |
+What the scan cannot see, and only code review catches: hardcoded port assumptions, dependencies on a tool being pre-installed, example data that only makes sense to the author, language assumptions, platform assumptions.
+
+## Market scan
+
+```bash
+$ node scripts/analyze.mjs "pdf" --top 5
+
+=== Capabilities (derived from section headings) ===
+  ✓ 4/4 extract        (extract text / extract images / extract pages)
+  2/4      troubleshooting
+  ! unique encrypt     ← pdftk-server
+  ! unique add         ← anthropics/skills/pdf
+```
+
+No preset dimensions. The script pulls peer SKILL.md files, extracts their section headings, normalizes and groups them by leading verb, then counts how many peers cover each.
+
+That means it works on any domain. Run it against `"pdf"`, `"image generation"`, or `"agent skill registry"` and the dimensions come from the data, not from a hardcoded list.
+
+`4/4` is table stakes. `unique` is where differentiation lives, though it may also just be that peer's special case.
+
+## Naming
+
+```bash
+node scripts/name-check.mjs <candidate...> --owner <account>
+node scripts/name-check.mjs --suggest "export chat conversations"
+```
+
+```
+✓ clean    chat-publish     skills.sh    2 hits  GitHub    9 repos
+! crowded  chat-archive     skills.sh    6 hits  GitHub  359 repos
+✗ taken    export-chat      skills.sh   16 hits  GitHub  115 repos
+```
+
+Only a collision inside skills.sh or clawhub counts as a hard conflict. Same-name repos on GitHub are common across unrelated domains and only feed the density score.
+
+## Publishing
+
+```bash
+node scripts/publish.mjs --repo <path> --version 0.6.0 --dry-run
+node scripts/publish.mjs --repo <path> --version 0.6.0
+```
+
+Runs: generalize check, frontmatter validation, commit and push, clawhub publish, telemetry trigger, next-step summary.
+
+Two points hand control back to you: clawhub login (the device code must be typed in a browser) and git conflicts (the script does not merge).
+
+## The part nobody else covers
+
+`clawhub publish` succeeding and skills.sh indexing your skill are unrelated events.
+
+- skills.sh has no submission form and no publish command. Indexing comes only from install telemetry.
+- The telemetry switch is `!process.env.DISABLE_TELEMETRY`, which means `DISABLE_TELEMETRY=0` disables it just as effectively as `1`.
+- clawhub search matches `displayName` only. Description and tags do not participate. Optimizing your description improves conversion, not discoverability.
+- An indexed skill and an HTTP 200 are different things. skills.sh is a SPA; unindexed paths return 200 too. The only reliable check is the `api/search` count.
+
+## Verification
+
+```bash
+$ node scripts/check.mjs <owner>/<repo> <name>
+
+=== Layout ===
+  ✓ skills/my-skill/SKILL.md
+=== Frontmatter ===
+  ✓ name  ✓ description  ✓ license
+=== skills.sh ===
+  ✗ not indexed (0 results)
+=== clawhub ===
+  ✓ published  89 downloads
+```
+
+## Relationship to similar tools
+
+| Tool | What it solves |
 | --- | --- |
-| `mercatorproj/skill-publisher` | 校验、打包、推到自己仓库 |
-| `zihad550/skills` @ship-skill | 铺到本机各 agent |
-| `glebis/claude-skills` @publish-skill | 发到自建站点 |
-| `openclaw/openclaw` @clawhub | clawhub CLI 用法 |
-| `stealth-factory/skills` @skill-publishing | SKILL.md 写法与 CLI 参数 |
+| `mercatorproj/skill-publisher` | Validate, package, push to your own repo |
+| `zihad550/skills` @ship-skill | Distribute to every agent on this machine |
+| `glebis/claude-skills` @publish-skill | Publish to a self-hosted site |
+| `openclaw/openclaw` @clawhub | clawhub CLI usage |
+| `stealth-factory/skills` @skill-publishing | SKILL.md authoring and CLI flags |
 
-一句话分辨：别人管「文件怎么放过去」，这里管「放过去之后为什么搜不到」。
+The dividing line: the others cover how to move files somewhere. This one covers why nobody finds them afterwards.
 
-## 三条最容易错的
+This niche is small. Peer install counts range from 18 to 399.
 
-1. **遥测开关只看变量是否存在**。`DISABLE_TELEMETRY=0` 和 `=1` 效果一样，都会让安装事件一个都发不出去。
-2. **clawhub 搜索只匹配 displayName**。描述和标签不参与检索，优化描述不会提升曝光。
-3. **CLI 能装不等于网站能搜到**。两套系统，只认 `api/search` 返回的 count。
-
-## 相关的
-
-- [chat-share-reader](https://github.com/mapleleo-hub/chat-share-reader)：这套流程的实际来源，一个导出 AI 对话的工具
-- [deja-vu](https://github.com/vshulcz/deja-vu)：43 个 agent 的会话格式登记表，做同类工具时省大量逆向
-
-## 许可
+## License
 
 MIT

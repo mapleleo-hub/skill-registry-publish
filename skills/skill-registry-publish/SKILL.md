@@ -1,6 +1,6 @@
 ---
 name: skill-registry-publish
-description: 把一个 agent skill 从自用版本改成可公开发布，再推到公开目录并争取被发现。含泛化检查（个人路径、内网地址、凭据）、赛道分析（从同类章节标题提炼能力分布）、取名候选与占用检查、一键发布、索引验证。用户要说「发布这个 skill」「上架」「泛化」「起个名字」「这个赛道有谁」「让人能搜到」时用。
+description: "Take an agent skill from personal use to public release, then get it discovered. 把一个自用 skill 泛化成可公开发布的版本，再推到公开目录。Includes a generalization pass (hardcoded paths, internal addresses, credentials), a market scan that derives capability dimensions from peer SKILL.md headings, name collision checks across three registries, one-command publish, and index verification. 含泛化检查、赛道分析、取名占用检查、一键发布、收录验证。用户要说「发布这个 skill」「上架」「泛化」「起个名字」「这个赛道有谁」「让人能搜到」时用。"
 license: MIT
 metadata:
   version: 0.6.0
@@ -165,7 +165,18 @@ node scripts/publish.mjs --repo <仓库路径> --version 0.5.0             # 执
 
 必须是 `skills/<name>/SKILL.md`。根目录直接放 SKILL.md 会让部分扫描逻辑提前返回。
 
-本机继续用同一份源码：`~/.agents/skills/<name>` 指向仓库里的 `skills/<name>`。Windows 用 junction，不要复制两份。
+本机继续用同一份源码，不要复制两份：把 `~/.agents/skills/<name>` 链接到仓库里的 `skills/<name>`。
+
+```bash
+# macOS / Linux
+ln -s /path/to/repo/skills/<name> ~/.agents/skills/<name>
+
+# Windows，用目录联接，不需要管理员权限
+# PowerShell: New-Item -ItemType Junction -Path <link> -Target <target>
+# cmd:        mklink /J <link> <target>
+```
+
+两份副本一周内必然漂移，链接不会。
 
 **完成条件**：`npx skills add <owner>/<repo> --list` 能列出这个 skill。
 

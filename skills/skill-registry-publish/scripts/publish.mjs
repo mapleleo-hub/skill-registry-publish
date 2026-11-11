@@ -137,8 +137,9 @@ try {
   } else {
     const who = sh('npx', ['-y', 'clawhub', 'whoami']);
     if (who.status !== 0 || /Not logged in/i.test(who.stdout + who.stderr)) {
-      console.log(C.warn('未登录，需要人工跑一次：npx clawhub login（设备码要在浏览器输入）'));
-      console.log(C.dim('登录后重跑本脚本，或手动执行 clawhub skill publish'));
+      console.log(C.warn('Not logged in. Run once by hand: npx clawhub login (device code goes in the browser)'));
+      console.log(C.dim('  未登录。人工跑一次 npx clawhub login，设备码要在浏览器里输入。'));
+      console.log(C.dim('  登录后重跑本脚本，或手动执行 clawhub skill publish'));
     } else if (!opt.version) {
       console.log(C.bad('缺 --version，clawhub 要求语义化版本'));
     } else if (opt.dryRun) {
