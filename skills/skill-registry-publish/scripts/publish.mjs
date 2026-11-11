@@ -7,6 +7,7 @@
 // 需要人工介入的两处会明确停下：clawhub 未登录、git 有冲突。
 
 import { execFileSync, spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
@@ -46,10 +47,26 @@ function run(cmd, argv, opts) {
   return (r.stdout || '').trim();
 }
 
+// 同目录下的兄弟脚本，用绝对路径调用，避免依赖 cwd
+const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(opt.repo);
 let failed = false;
 
 try {
+  // 0. 泛化检查：个人路径、内网地址、凭据会挡住别人使用，先拦一道
+  console.log(C.step(0, '泛化检查'));
+  const gen = sh('node', [path.join(SCRIPT_DIR, 'generalize.mjs'), repo], { timeout: 60000 });
+  const genOut = (gen.stdout || '') + (gen.stderr || '');
+  const blocks = (genOut.match(/✗/g) || []).length;
+  if (blocks) {
+    console.log(C.bad(`发现 ${blocks} 处必须改的问题`));
+    for (const line of genOut.split('\n').filter((l) => l.trim() && !l.includes('===') && !l.startsWith('共 ')).slice(0, 10)) {
+      console.log(C.dim('  ' + line.trim()));
+    }
+    throw new Error('泛化检查未通过，先修完 block 项。单跑：node scripts/generalize.mjs <repo>');
+  }
+  console.log(C.ok('无阻断项'));
+
   // 1. 定位 skill
   console.log(C.step(1, '定位 skill'));
   const skillsDir = path.join(repo, 'skills');
@@ -94,7 +111,18 @@ try {
       if (opt.dryRun) console.log(C.dim('[dry-run] 将执行 git add -A && commit && push'));
       else {
         run('git', ['-C', repo, 'add', '-A']);
-        run('git', ['-C', repo, 'commit', '-m', `发布 ${skill} ${opt.version || ''}`.trim()]);
+        // 用 GitHub 的 noreply 邮箱提交。很多人全局配的是真实邮箱，
+        // 而 GitHub 开了 email privacy 后会自动拒绝这类 push，
+        // 报错是 "push declined due to email privacy restrictions"
+        const who = sh('git', ['-C', repo, 'remote', 'get-url', 'origin']).stdout.trim();
+        const m = who.match(/github\.com[:/]([^/]+)\/([^/.]+)/);
+        const owner = m ? m[1] : 'agent';
+        run('git', [
+          '-C', repo,
+          '-c', 'user.name=' + owner,
+          '-c', 'user.email=' + owner + '@users.noreply.github.com',
+          'commit', '-m', `发布 ${skill} ${opt.version || ''}`.trim(),
+        ]);
         console.log(C.ok('已提交'));
         run('git', ['-C', repo, 'push']);
         console.log(C.ok('已推送'));
